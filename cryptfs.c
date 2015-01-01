@@ -1780,8 +1780,8 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
   if(is_hw_disk_encryption((char*) crypt_ftr->crypto_type_name))
-  if (!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name))
-    rc = -1;
+    if (!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name))
+      rc = -1;
 #endif
  
   // Create crypto block device - all (non fatal) code paths
