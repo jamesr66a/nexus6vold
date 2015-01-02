@@ -80,6 +80,10 @@ LOCAL_SRC_FILES := \
 
 LOCAL_C_INCLUDES := $(common_c_includes)
 
+LOCAL_C_INCLUDES += device/qcom/common/cryptfs_hw
+common_shared_libraries += libcryptfs_hw
+LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
+
 LOCAL_CFLAGS := -Werror=format
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)

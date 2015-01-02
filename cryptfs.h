@@ -52,6 +52,8 @@
                                         correctly marked partial encryption */
 #define CRYPT_DATA_CORRUPT 0x8 /* Set when encryption is fine, but the
                                   underlying volume is corrupt */
+#define CRYPT_PFE_ACTIVATED 0x10 /* Per-File-Encryption is activated. */
+#define CRYPT_FDE_COMPLETED 0x20 /* Full-Disk-Encryption is completed */
 
 /* Allowed values for type in the structure below */
 #define CRYPT_TYPE_PASSWORD 0 /* master_key is encrypted with a password

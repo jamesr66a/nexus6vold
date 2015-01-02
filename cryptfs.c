@@ -64,6 +64,10 @@
 
 #define DM_CRYPT_BUF_SIZE 4096
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+#include "cryptfs_hw.h"
+#endif
+
 #define HASH_COUNT 2000
 #define KEY_LEN_BYTES 16
 #define IV_LEN_BYTES 16
@@ -990,7 +994,14 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
   tgt->status = 0;
   tgt->sector_start = 0;
   tgt->length = crypt_ftr->fs_size;
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+  if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name))
+    strlcpy(tgt->target_name, "req-crypt", DM_MAX_TYPE_NAME);
+  else
+    strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
+#else
   strcpy(tgt->target_type, "crypt");
+#endif
 
   crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
@@ -1036,7 +1047,11 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
      */
     v = (struct dm_target_versions *) &buffer[sizeof(struct dm_ioctl)];
     while (v->next) {
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+        if(!strcmp(v->name, "crypt") || !strcmp(v->name, "req-crypt")) {
+#else
         if (! strcmp(v->name, "crypt")) {
+#endif
             /* We found the crypt driver, return the version, and get out */
             version[0] = v->version[0];
             version[1] = v->version[1];
@@ -1058,12 +1073,16 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   unsigned int minor;
-  int fd;
+  int fd=0;
   int i;
   int retval = -1;
   int version[3];
   char *extra_params;
   int load_count;
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+  char encrypted_state[PROPERTY_VALUE_MAX] = {0};
+  char progress[PROPERTY_VALUE_MAX] = {0};
+#endif
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
     SLOGE("Cannot open device-mapper\n");
@@ -1087,6 +1106,15 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
   snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+  /* Set fde_enabled if either FDE completed or in-progress */
+  property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
+  property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
+  if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, ""))
+      extra_params = "fde_enabled";
+  else
+      extra_params = "fde_disabled";
+#else
   extra_params = "";
   if (! get_dm_crypt_version(fd, name, version)) {
       /* Support for allow_discards was added in version 1.11.0 */
@@ -1096,6 +1124,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
           SLOGI("Enabling support for allow_discards in dmcrypt.\n");
       }
   }
+#endif
 
   load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
                                          fd, extra_params);
@@ -3084,7 +3113,11 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
            On successfully completing encryption, remove this flag */
         crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         crypt_ftr.crypt_type = crypt_type;
+#ifndef CONFIG_HW_DISK_ENCRYPTION
         strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
+#else
+        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+#endif
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
@@ -3157,6 +3190,9 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
                   crypt_ftr.encrypted_upto);
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
         }
+
+        if (how == CRYPTO_ENABLE_INPLACE)
+            crypt_ftr.flags |= CRYPT_FDE_COMPLETED;
 
         put_crypt_ftr_and_key(&crypt_ftr);
 
